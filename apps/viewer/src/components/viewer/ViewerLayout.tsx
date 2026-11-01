@@ -26,7 +26,6 @@ import { useViewerStore } from '@/store';
 import { isCollabEnabled } from '@/lib/collab/config';
 import { toast } from '@/components/ui/toast';
 import { parseRoleFromToken } from '@/lib/collab/share-link';
-import { parseHandoffOrigins, startModelHandoff } from '@/lib/model-handoff';
 import { EntityContextMenu } from './EntityContextMenu';
 import { AnonymizedExportDialog } from './anonymized-export/AnonymizedExportDialog';
 import { useDuplicateShortcut } from './useDuplicateShortcut';
@@ -111,19 +110,6 @@ export function ViewerLayout() {
         console.error('[viewer] autoload from ?model=… failed:', err);
       }
     })();
-  }, [autoloadAddModel]);
-
-  // Model hand-off from an opener window (`?handoff=1`), e.g. the bridge.geoBIM modeler's
-  // "open in ifc.geoBIM.app" button. Origin- and opener-checked, see lib/model-handoff.ts.
-  useEffect(() => {
-    return startModelHandoff({
-      win: window,
-      allowedOrigins: parseHandoffOrigins(import.meta.env.VITE_HANDOFF_ORIGINS as string | undefined),
-      onModel: async (file) => {
-        await autoloadAddModel(file);
-      },
-      onError: (message) => toast.error(`Model hand-off failed: ${message}`),
-    }) ?? undefined;
   }, [autoloadAddModel]);
 
   // Deep-link collaboration join: a share link is `?room=…&t=…`. The recipient
