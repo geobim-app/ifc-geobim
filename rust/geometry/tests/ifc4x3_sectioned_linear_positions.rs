@@ -59,6 +59,10 @@ DATA;
 #42=IFCPOINTBYDISTANCEEXPRESSION(IFCLENGTHMEASURE(157.0796326795),$,$,$,#39);
 #43=IFCAXIS2PLACEMENTLINEAR(#42,$,$);
 #44=IFCSECTIONEDSOLIDHORIZONTAL(#39,(#4,#4),(#41,#43));
+#50=IFCCARTESIANPOINT((1.5,0.));
+#51=IFCAXIS2PLACEMENT2D(#50,$);
+#52=IFCRECTANGLEPROFILEDEF(.AREA.,$,#51,1.,0.5);
+#53=IFCSECTIONEDSOLIDHORIZONTAL(#3,(#52,#52),(#6,#8));
 ENDSEC;
 END-ISO-10303-21;
 "#;
@@ -125,4 +129,14 @@ fn lofts_along_gradient_curve_following_arc_and_grade() {
     close(b.max[1], 100.0, "y max");
     close(b.min[2], 49.75, "z min at start");
     close(b.max[2], 51.82, "z max at end");
+}
+
+#[test]
+fn profile_x_points_left_of_travel() {
+    // Profile x ∈ [1, 2] (rectangle centred at x = 1.5). IFC4x3 profile +X is local +Y of the
+    // IfcAxis2PlacementLinear = left of travel; travel is +Y, so the solid lies at x ∈ [−2, −1]
+    // (IfcOpenShell agrees). Before the fix it was mirrored to the right (x ∈ [1, 2]).
+    let b = bbox(53);
+    close(b.min[0], -2.0, "x min");
+    close(b.max[0], -1.0, "x max");
 }
