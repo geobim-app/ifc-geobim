@@ -73,6 +73,10 @@ DATA;
 #65=IFCPOINTBYDISTANCEEXPRESSION(IFCLENGTHMEASURE(20.),$,$,$,#62);
 #66=IFCAXIS2PLACEMENTLINEAR(#65,$,$);
 #67=IFCSECTIONEDSOLIDHORIZONTAL(#62,(#4,#4),(#64,#66));
+#70=IFCCARTESIANPOINT((1.5,0.));
+#71=IFCAXIS2PLACEMENT2D(#70,$);
+#72=IFCRECTANGLEPROFILEDEF(.AREA.,$,#71,1.,0.5);
+#73=IFCSECTIONEDSOLIDHORIZONTAL(#3,(#72,#72),(#6,#8));
 ENDSEC;
 END-ISO-10303-21;
 "#;
@@ -161,4 +165,14 @@ fn flat_polyline_arc_length_equals_horizontal_station() {
     close(b.max[1], 20.0, "end y");
     close(b.min[2], -0.25, "z min (profile centred on z = 0)");
     close(b.max[2], 0.25, "z max");
+}
+
+#[test]
+fn profile_x_points_left_of_travel() {
+    // Profile x ∈ [1, 2] (rectangle centred at x = 1.5). IFC4x3 profile +X is local +Y of the
+    // IfcAxis2PlacementLinear = left of travel; travel is +Y, so the solid lies at x ∈ [−2, −1]
+    // (IfcOpenShell agrees). Before the fix it was mirrored to the right (x ∈ [1, 2]).
+    let b = bbox(73);
+    close(b.min[0], -2.0, "x min");
+    close(b.max[0], -1.0, "x max");
 }

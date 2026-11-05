@@ -171,6 +171,14 @@ impl GeometryProcessor for SectionedSolidHorizontalProcessor {
             let pos_entity = decoder.decode_by_id(pos_id)?;
             let position =
                 PositionAlongDirectrix::parse(&pos_entity, decoder, &directrix_entity.ifc_type)?;
+            // IFC4x3 (IfcAxis2PlacementLinear): profile +X is the placement's local +Y, i.e.
+            // LEFT of travel (as IfcOpenShell and upstream ifc-lite #7584). This processor works
+            // in the IFC4x1 frame with +X to the right, so mirror the profile for IFC4x3.
+            let profile = if pos_entity.ifc_type == IfcType::IfcAxis2PlacementLinear {
+                mirror_profile_x(profile)
+            } else {
+                profile
+            };
             authored.push((profile, position));
         }
 
@@ -358,6 +366,22 @@ fn compute_frame(
         up,
         tangent: base.tangent,
     }
+}
+
+/// Mirror a profile about its Y axis (x → −x). Ring order is reversed so the outer
+/// boundary stays counter-clockwise and holes clockwise (face normals unchanged).
+fn mirror_profile_x(mut profile: Profile2D) -> Profile2D {
+    let flip = |ring: &mut Vec<Point2<f64>>| {
+        for p in ring.iter_mut() {
+            p.x = -p.x;
+        }
+        ring.reverse();
+    };
+    flip(&mut profile.outer);
+    for hole in profile.holes.iter_mut() {
+        flip(hole);
+    }
+    profile
 }
 
 fn transform_outer(outer: &[Point2<f64>], frame: &AlignmentFrame) -> Vec<Point3<f64>> {
