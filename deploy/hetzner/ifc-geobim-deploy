@@ -1,0 +1,104 @@
+#!/bin/bash
+# ifc.geobim.app: Checkout /var/www/ifclite-fork aktualisieren und den Viewer bauen.
+# Läuft als root, aufgerufen über sudo aus ifc-geobim-deploy-ssh (Forced Command).
+#
+#   status    nur lesen: Commit, Branch, lokale Änderungen, Alter von dist, Token vorhanden?
+#   deploy    git fetch + merge --ff-only, bei Bedarf pnpm install, Build nach dist.next,
+#             dann dist tauschen (alter Stand bleibt als dist.prev liegen)
+#   rollback  dist und dist.prev zurücktauschen
+set -euo pipefail
+
+REPO=/var/www/ifclite-fork
+BRANCH=feat/cesium-ion-export
+VIEWER="$REPO/apps/viewer"
+LOCK=/run/lock/ifc-geobim-deploy.lock
+
+export HOME=/root
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+# node über nvm installiert? Dann die neueste Version dazunehmen.
+if ! command -v node >/dev/null 2>&1 && [ -d /root/.nvm/versions/node ]; then
+  NODE_BIN="$(ls -d /root/.nvm/versions/node/*/bin | sort -V | tail -1)"
+  export PATH="$NODE_BIN:$PATH"
+fi
+
+action="${1:-status}"
+case "$action" in status|deploy|rollback) ;; *) echo "Erlaubt: status | deploy | rollback" >&2; exit 2 ;; esac
+
+cd "$REPO"
+
+token_state() {
+  if grep -qE '^VITE_CESIUM_ION_TOKEN=.+' "$VIEWER/.env.local" 2>/dev/null; then echo "gesetzt"; else echo "FEHLT"; fi
+}
+
+if [ "$action" = status ]; then
+  echo "Branch:    $(git branch --show-current)"
+  echo "Commit:    $(git log -1 --format='%h %ci %s')"
+  echo "origin:    $(git log -1 --format='%h %ci' "origin/$BRANCH" 2>/dev/null || echo '?') (Stand des letzten fetch)"
+  echo "dist:      $(stat -c '%y' "$VIEWER/dist/index.html" 2>/dev/null | cut -c1-19 || echo 'fehlt')"
+  echo "dist.prev: $(stat -c '%y' "$VIEWER/dist.prev/index.html" 2>/dev/null | cut -c1-19 || echo 'keins')"
+  echo "Ion-Token: $(token_state)"
+  echo "Änderungen im Checkout:"
+  git status --short | head -20
+  exit 0
+fi
+
+exec 9>"$LOCK"
+flock -n 9 || { echo "Es läuft schon ein Deploy — Abbruch" >&2; exit 1; }
+
+if [ "$action" = rollback ]; then
+  cd "$VIEWER"
+  [ -d dist.prev ] || { echo "Kein dist.prev vorhanden — nichts zurückzurollen" >&2; exit 1; }
+  mv dist dist.swap && mv dist.prev dist && mv dist.swap dist.prev
+  echo "Zurückgerollt. Aktiv: $(stat -c '%y' dist/index.html | cut -c1-19)"
+  exit 0
+fi
+
+# --- deploy ---
+[ "$(git branch --show-current)" = "$BRANCH" ] || { echo "Checkout steht nicht auf $BRANCH — Abbruch" >&2; exit 1; }
+# build:wasm erzeugt diese versionierte Datei neu; Abweichungen daraus sind kein
+# Eingriff von Hand und dürfen den nächsten Deploy nicht blockieren.
+git checkout -- packages/wasm/pkg/ifc-lite.d.ts
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "Lokale Änderungen in $REPO — Abbruch" >&2
+  git status --short >&2
+  exit 1
+fi
+
+old="$(git rev-parse HEAD)"
+git fetch --quiet origin "$BRANCH"
+git merge --ff-only "origin/$BRANCH"
+new="$(git rev-parse HEAD)"
+
+[ "$(token_state)" = gesetzt ] || echo "WARNUNG: VITE_CESIUM_ION_TOKEN fehlt in $VIEWER/.env.local — Cesium-Ansicht bleibt schwarz" >&2
+
+# cargo/wasm-pack liegen nur in /root/.cargo/bin (fehlt in sudo secure_path);
+# die Paket-Build-Skripte rufen "pnpm" direkt auf, pnpm ist nicht global installiert
+export PATH="/root/.cargo/bin:$PATH"
+SHIM="$(mktemp -d)"; trap 'rm -rf "$SHIM"' EXIT
+printf '#!/bin/sh\nexec corepack pnpm "$@"\n' > "$SHIM/pnpm"; chmod +x "$SHIM/pnpm"
+export PATH="$SHIM:$PATH"
+
+corepack pnpm install --frozen-lockfile                # immer, nicht nur bei Lockfile-Änderung
+corepack pnpm build:wasm                               # Rust-Kern (pkg/*.wasm ist nicht versioniert)
+corepack pnpm --filter "@ifc-lite/viewer^..." build    # nur die Abhängigkeiten, NICHT der Viewer selbst
+
+cd "$VIEWER"
+rm -rf dist.next
+corepack pnpm exec vite build --outDir dist.next --emptyOutDir
+# Alte Chunks behalten, damit offene Tabs beim Nachladen nicht auf 404 laufen
+cp -an dist/assets/. dist.next/assets/ 2>/dev/null || true
+# ... aber nicht ewig: cp -a behält das Datum, übernommene Chunks älter als 14 Tage fallen weg
+find dist.next/assets -type f -mtime +14 -delete
+
+# Tauschen: dist ist nur für Millisekunden weg, nicht während des ganzen Builds
+rm -rf dist.prev
+mv dist dist.prev
+mv dist.next dist
+
+if ! node ../../scripts/check-tla-chunk-await.mjs; then
+  echo "TLA-Prüfung fehlgeschlagen — alter Stand wird wiederhergestellt" >&2
+  mv dist dist.failed && mv dist.prev dist && rm -rf dist.failed
+  exit 1
+fi
+
+echo "Deployed: $(git -C "$REPO" log -1 --format='%h %s')  (vorher ${old:0:9})"

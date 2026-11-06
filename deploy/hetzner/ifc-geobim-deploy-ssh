@@ -1,0 +1,10 @@
+#!/bin/bash
+# Forced Command für den Deploy-Schlüssel (authorized_keys des Users "deploy").
+# Lässt nur status | deploy | rollback durch und ruft dafür per sudo das Root-Skript.
+set -euo pipefail
+case "${SSH_ORIGINAL_COMMAND:-status}" in
+  status)   exec sudo -n /usr/local/bin/ifc-geobim-deploy status ;;
+  deploy)   exec sudo -n /usr/local/bin/ifc-geobim-deploy deploy ;;
+  rollback) exec sudo -n /usr/local/bin/ifc-geobim-deploy rollback ;;
+  *) echo "Erlaubt: status | deploy | rollback" >&2; exit 2 ;;
+esac

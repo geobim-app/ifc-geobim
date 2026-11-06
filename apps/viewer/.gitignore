@@ -1,1 +1,4 @@
 .env.local
+# Deploy-Zwischenstände auf dem Server (deploy/hetzner/ifc-geobim-deploy)
+dist.next/
+dist.prev/
