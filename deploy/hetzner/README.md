@@ -13,7 +13,7 @@ drei Befehle auslösen, keine Shell, keine Weiterleitungen:
 
 | Befehl | Wirkung |
 |---|---|
-| `ssh ifc-deploy status` | nur lesen: Commit, Branch, lokale Änderungen, Alter von `dist`, ob der Ion-Token gesetzt ist |
+| `ssh ifc-deploy status` | nur lesen: Commit, Branch, lokale Änderungen, Alter von `dist`, ob der Ion-Token gesetzt ist, und welcher Commit tatsächlich ausgeliefert wird (`dist/.build-commit`; nach `rollback` steht dort `ACHTUNG … Build ≠ HEAD`) |
 | `ssh ifc-deploy deploy` | `git fetch` + `merge --ff-only` von `origin/feat/cesium-ion-export`, `pnpm install`, WASM (`build:wasm`) und Workspace-Pakete neu bauen, Viewer nach `dist.next` bauen (alte Chunks ≤ 14 Tage bleiben für offene Tabs erhalten), dann Tausch mit `dist` (alter Stand bleibt als `dist.prev`) |
 | `ssh ifc-deploy rollback` | `dist` und `dist.prev` zurücktauschen |
 

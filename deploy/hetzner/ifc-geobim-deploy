@@ -36,6 +36,15 @@ if [ "$action" = status ]; then
   echo "origin:    $(git log -1 --format='%h %ci' "origin/$BRANCH" 2>/dev/null || echo '?') (Stand des letzten fetch)"
   echo "dist:      $(stat -c '%y' "$VIEWER/dist/index.html" 2>/dev/null | cut -c1-19 || echo 'fehlt')"
   echo "dist.prev: $(stat -c '%y' "$VIEWER/dist.prev/index.html" 2>/dev/null | cut -c1-19 || echo 'keins')"
+  built="$(cat "$VIEWER/dist/.build-commit" 2>/dev/null || true)"
+  head="$(git rev-parse HEAD)"
+  if [ -z "$built" ]; then
+    echo "Build:     unbekannt (vor Einführung von .build-commit gebaut)"
+  elif [ "$built" = "$head" ]; then
+    echo "Build:     ${built:0:9} (= HEAD)"
+  else
+    echo "Build:     ${built:0:9}  ACHTUNG: Rollback aktiv bzw. Build ≠ HEAD ${head:0:9}"
+  fi
   echo "Ion-Token: $(token_state)"
   echo "Änderungen im Checkout:"
   git status --short | head -20
@@ -85,6 +94,8 @@ corepack pnpm --filter "@ifc-lite/viewer^..." build    # nur die Abhängigkeiten
 cd "$VIEWER"
 rm -rf dist.next
 corepack pnpm exec vite build --outDir dist.next --emptyOutDir
+# Gebauten Commit festhalten; wandert bei rollback mit dist mit, status vergleicht ihn mit HEAD
+git -C "$REPO" rev-parse HEAD > dist.next/.build-commit
 # Alte Chunks behalten, damit offene Tabs beim Nachladen nicht auf 404 laufen
 cp -an dist/assets/. dist.next/assets/ 2>/dev/null || true
 # ... aber nicht ewig: cp -a behält das Datum, übernommene Chunks älter als 14 Tage fallen weg
